@@ -1,4 +1,4 @@
-# NAME
+# index
 
 index --- creates an index of keys and tokens, storing for each
 key/token pair the number of times that token is associated with the
@@ -6,33 +6,16 @@ key. Keys may be searched by providing a list of tokens, to determine
 the most closely matching key.
 
 # SYNOPSIS
-
-**index** ( **-h**\
-
-\| **-f**\<file\> \[ **-v** \] **-c**\
-
-\| **-f**\<file\> \[( **-v** \| **-w**\<num\> \| **-W**\<num\> )\...\]\
-
-( **-k**\<key\> \| **-K**\<file\> ) (( **-t**\<file\> \| **-T**\<file\>
-)\...) **-i**\
-
-\| **-f**\<file\> \[( **-v** \| **-w**\<num\> \| **-W**\<num\> )\...\]
-**-l**\
-
-\| **-f**\<file\> \[( **-v** \| **-w**\<num\> \| **-W**\<num\> )\...\]
-**-m**\
-
-\| **-f**\<file\> \[( **-v** \| **-w**\<num\> \| **-W**\<num\> )\...\]\
-
-( **-k**\<key\> \| **-K**\<file\> ) **-r**\
-
-\| **-f**\<file\> \[( **-C**\<num\> \| **-v** \| **-w**\<num\> \|
-**-W**\<num\> )\...\]\
-
-(( **-t**\<file\> \| **-T**\<file\> )\...) **-s**\
-
-) \...
-
+```
+ index ( -h
+       | -f<file> [ -v ] -c
+       | -f<file> [( -v | -w<num> | -W<num> )...] ( -k<key> | -K<file> ) (( -t<file> | -T<file> )...) -i
+       | -f<file> [( -v | -w<num> | -W<num> )...] -l
+       | -f<file> [( -v | -w<num> | -W<num> )...] -m
+       | -f<file> [( -v | -w<num> | -W<num> )...] ( -k<key> | -K<file> ) -r
+       | -f<file> [( -C<num> | -v | -w<num> | -W<num> )...] (( -t<file> | -T<file> )...) -s
+       ) ...
+```
 # OPTIONS
 
 **index**\'s options are either operations (See **OPERATIONS**) or
