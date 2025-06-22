@@ -1,0 +1,324 @@
+.TH INDEX 1 "" "0.1"
+./"============================================================================================================================================
+.SH NAME
+index \(em creates an index of keys and tokens, storing for each key/token pair the number of times that token is associated with the key. Keys may be searched by providing a list of tokens, to determine the most closely matching key.
+./"============================================================================================================================================
+.SH SYNOPSIS
+.B index
+(
+.B \-h
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[
+.B \-v
+]
+.B \-c
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[(
+.B \-v
+|
+.BR \-w <num>
+|
+.BR \-W <num>
+)...]
+.br
+.if n .ti +8n
+.if t .ti +\w'\fBindex\fP\ | 'u
+(
+.BR \-k <key>
+|
+.BR \-K <file>
+)
+((
+.BR \-t <file>
+|
+.BR \-T <file>
+)...)
+.B \-i
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[(
+.B \-v
+|
+.BR \-w <num>
+|
+.BR \-W <num>
+)...]
+.B \-l
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[(
+.B \-v
+|
+.BR \-w <num>
+|
+.BR \-W <num>
+)...]
+.B \-m
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[(
+.B \-v
+|
+.BR \-w <num>
+|
+.BR \-W <num>
+)...]
+.br
+.if n .ti +8n
+.if t .ti +\w'\fBindex\fP\ | 'u
+(
+.BR \-k <key>
+|
+.BR \-K <file>
+)
+.B \-r
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+|
+.BR \-f <file>
+[(
+.BR \-C <num>
+|
+.B \-v
+|
+.BR \-w <num>
+|
+.BR \-W <num>
+)...]
+.br
+.if n .ti +8n
+.if t .ti +\w'\fBindex\fP\ | 'u
+((
+.BR \-t <file>
+|
+.BR \-T <file>
+)...)
+.B \-s
+.br
+.if n .ti +6n
+.if t .ti +\w'\fBindex\fP\ 'u
+) ...
+./"============================================================================================================================================
+.SH OPTIONS
+.BR index 's
+options are either operations (See
+.BR OPERATIONS )
+or modifiers. The synopsis above shows which modifiers are used by each operation, as well as whether they are mandatory.
+.PP
+Multiple operations may be specified in the same command, in which case they are ran sequentially. If a modifier is required for a given operation, it may occur anywhere in the command before the operation in question, even if another operation occurs in between.
+.PP
+Modifiers that are ignored by the operation listed have been ommitted from the synopsis for brevity, but will not cause an error, and may be read by subsequent operations.
+.PP
+In any case where a file is required, the filepath may be subtituted by \- to read from stdin.
+.PP
+.SS OPERATIONS
+.PP
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-c
+Create. Creates an index file.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-h
+Help. Displays usage information.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-i
+Index. Stores the count of each provided token against the provided key in the provided index file.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-l
+List. Write every key contained in the index file to stdout, separated by new lines.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-m
+reMake. Read the index file and remake it, possibly improving compression and query speed.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-r
+Remove. Deletes all information pertaining to the provided key from the provided index file.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-s
+Search. Returns the key for which the product of the counts of all tokens provided is the highest from the provided index file.
+.PP
+.SS MODIFIERS
+.PP
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP \w'\fB\-T\fP<file>'u+3n
+.BR \-f <file>
+set the index file to be operated on by subsequent operations.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-k <key>
+sets the key to be operated on by subsequent operations.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-K <file>
+read the key to be operated on by subsequent operations from file.  N.B. this allows keys containing newlines etc., however such keys may cause confusing output from the list and search operations.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-t <file>
+read tokens for the next operation from file, one token per line.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-T <file>
+read a single token for the next operation from file, the whole file is one token.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.B \-v
+Toggle verbose mode (initially off)
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-w <num>
+sets the interval in seconds at which to recheck the lock, if an operation is blocked by a lockfile (default 0.1)
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.TP
+.BR \-W <num>
+sets the maximum time in seconds to wait if an operation is blocked by a lockfile (default 2)
+./"============================================================================================================================================
+.SH DESCRIPTION
+.B index
+creates an index of keys and tokens, storing for each key/token pair the number of times that token is associated with the key. Keys may be searched by providing a list of tokens,
+.B index
+will return the most relevant key.
+.PP
+Some operations will create a lock file to prevent other instances of
+.B index
+from reading from or writing to the file. These other instances will retry at an interval, up to a maximum length of time, controlled by the
+.B \-w
+and
+.B \-W
+options.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS INDEX FILE STRUCTURE
+The file maintained by
+.B index
+begins with the plaintext version number of 
+.B index
+used to create the file.
+.PP
+The remainder of the file is gzipped, with each line as follows:
+.RS
+.PP
+\fItoken_hash count encoded_key\fP
+.RE
+.PP
+where \fItoken_hash\fP is the md5 hash of a token, \fIencoded_key\fP is a base64 encoded key, and \fIcount\fP is the number of times that token is associated with the key.
+.PP
+The version number is stored as a precaution, giving later versions of
+.B index
+the option to modify the index file structure, while maintaining compatibility with previous versions.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS CONSUMPTION OF MODIFIERS
+Most modifiers are not "consumed" by operations. Even after being used by one operation, they remain in place for subsequent operations in the same command.
+.PP
+The exceptions are the
+.B \-t
+and
+.B \-T
+modifiers, that provide tokens. Any tokens will persist through operations, such as create or list, that do not use tokens, but are "consumed" as soon as they are used. In this way, one command can perform multiple index operations, by updating the key to be indexed with
+.B \-k
+or
+.B \-K
+each time, and providing new files of tokens for each operation.
+./"============================================================================================================================================
+.SH OPERATIONS
+The available operations are detailed here, with the exception of Help (
+.BR \-h ).
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS CREATE
+Creates the index, containing no information bar the version number of 
+.B index
+used (see
+.BR "INDEX FILE STRUCTURE" ).
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS INDEX
+Appends the index with one key and associated token counts. All tokens in the token files provided with the 
+.B \-t
+and
+.B \-T
+options are counted and associated with the key (provided by the
+.B \-k
+or
+.B \-K
+options).
+.PP
+The index operation may be used multiple times with the same key, in which case the new token data will be appended to the token data already associated with the key (as opposed to overwriting data for the key). This comes with the following caveats
+.IP \(bu
+The new data is compressed separately to the rest of the index file. This means that the file will likely be bigger than necessary, which may negatively affect the speed of the search operation (
+.BR \-s ).
+.IP \(bu
+If any tokens are included in the new data that already existed in the old, the token counts will not be summed. Instead, they will be recorded as a new token. This will result in the search operation being biased towards this key when that token is included in the search query.
+.PP
+These issues can be resolved by rebuilding the index with the remake operation (see
+.BR REMAKE ).
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS LIST
+Lists all unique keys contained within the index, separated by newlines.
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS REMAKE
+Reads the index file and remakes it. This may improve compression rations and query speed, if the index operation has been used multiple times for some keys (see
+.BR INDEX ).
+Remake will also update the version number included at the top of the index to the current version of
+.B index
+being used. If the new version contains any differences to the index file structure, the index file will be remade in the new structure.
+.PP
+The remake operation locks the index file (see
+.BR DESCRIPTION).
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS REMOVE
+Removes all data pertaining to the provided key from the index file.
+.PP
+The remove operation locks the index file (see
+.BR DESCRIPTION).
+./"--------------------------------------------------------------------------------------------------------------------------------------------
+.SS SEARCH
+Returns the most closely matching keys to the provided tokens, in reverse order of closeness. Results are returned separated by newlines. The number of keys returned is controlled by the 
+.B \-C
+option.
+.PP
+Closeness of match is determined by giving each key in the index a score, with the higher score being the closer match. Scores are calculated as follows:
+.RS
+.PP
+(\fItoken1_count\fP + 1) * (\fItoken2_count\fP + 1) * (...
+.RE
+.PP
+where \fItokenN_count\fP is the count associated with the pair of the key and a given token from the search query in the index file.
+.PP
+Thus a key that matches 2 tokens once each has a score of 4, while a key that matches the same token twice has a score of 3, so the match prefers keys that match multiple tokens.
+./"============================================================================================================================================
+.SH RETURN CODES
+.TP
+.B 1
+Failure due to user's invocation of
+.BR index.
+.TP
+.B 2
+Failure due to incorrect file state - files may not exist, be not readable or not writable.
+.TP
+.B 3
+Failure due to the index file being locked.
+./"============================================================================================================================================
+.SH "SEE ALSO"
+.BR base64 (1),
+.BR gzip (1),
+.BR md5sum (1)

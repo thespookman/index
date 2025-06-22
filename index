@@ -1,0 +1,456 @@
+#!/bin/sh -
+
+IFS=' 	
+'
+unset -f unalias
+\unalias -a
+unset -f command
+SYSPATH="$(command -p getconf PATH 2>/dev/null)"
+[ -z "$SYSPATH" ] && SYSPATH='/usr/bin:/bin'
+PATH="$SYSPATH:$PATH"
+
+version=0.1
+
+indent=4
+term_width=`tput cols`
+option_width=12
+text_start=$((indent+option_width))
+text_width=$((term_width-text_start))
+
+display_options () {
+	while read -r option text;
+	do
+		option=$( 
+				printf '\t%s' "$option" \
+				| expand -t$indent
+			)
+		echo "$text" \
+		| fmt -w$text_width \
+		| while read -r line;
+		do 
+			printf '%s\t%s\n' "$option" "$line" \
+			| expand -t$text_start
+			option=
+		done
+	done
+}
+
+usage () {
+	name=`basename $0`
+	usage_text="Usage: $name "
+	usage_indent=${#usage_text}
+	( expand -t$usage_indent | fmt -sw$term_width ) <<EOF
+$usage_text( -h
+	| -f<file> -[v]c
+	| -f<file> [(-v|-w<num>|-W<num>)...] (-k<key>|-K<file>) ((-t<file>|-T<file>) ...) -i
+	| -f<file> [(-v|-w<num>|-W<num>)...] -l
+	| -f<file> [(-v|-w<num>|-W<num>)...] -m
+	| -f<file> [(-v|-w<num>|-W<num>)...] (-k<key>|-K<file>) -r
+	| -f<file> [(-C<num>|-v|-w<num>|-W<num>)...] ((-t<file>|-T<file>) ...) -s
+	) ...
+
+Options:
+$( 
+display_options <<EOS
+-c Create Operation. Create the index file.
+-C<num> sets the number of results to be returned by the search operation.
+-f<file> set the index file to be operated on by subsequent operations.
+-h display this usage information.
+-i Index Operation. Stores the count of each provided token against the provided key in the provided index file.
+-k<key>  sets the key to be operated on by subsequent operations.
+-K<file> read the key to be operated on by subsequent operations from file.  N.B. this allows keys containing newlines etc., however such keys may cause confusing output from the list and search operations.
+-l List Operation. Write every key contained in the index file to stdout, separated by new lines.
+-m reMake Operation. Read the index file and remake it, possibly improving compression and query speed.
+-r Remove Operation. Deletes all information pertaining to the provided key from the provided index file.
+-s Search Operation. Returns the key for which the product of the counts of all tokens provided is the highest from the provided index file.
+-t<file> read tokens for the next operation from file, one token per line.
+-T<file> read a single token for the next operation from file, the whole file is one token.
+-v Toggle verbose mode (initially $verbose_mode_initial)
+-w<num> sets the interval in seconds at which to recheck the lock, if an operation is blocked by a lockfile (default $wait_interval_default)
+-W<num> sets the maximum time in seconds to wait if an operation is blocked by a lockfile (default $wait_max_default)
+EOS
+)
+
+See $name(1) for more information
+
+EOF
+}
+
+
+check_index_non_empty () {
+	[ -s "$index_file" ] \
+	|| error "Index file is empty" 2
+}
+check_index_supplied () {
+	[ -z "$index_file" ] \
+	&& error "Index file is required" 1
+}
+check_index_readable () {
+	check_index_non_empty
+	[ -r "$index_file" ] \
+	|| error "$index_file is not readable" 2
+}
+check_index_writable () {
+	[ -f "$index_file" ] \
+	|| error "$index_file does not exist" 2
+	[ -w "$index_file" ] \
+	|| error "$index_file is not writable" 2
+}
+check_key_supplied () {
+	[ -z $key ] \
+	&& error "Key is required" 1
+}
+
+error () {
+	printf '%s\n\nRun with -h for usage.\n' "$1" >&2
+	exit $2
+}
+
+finish () {
+	rm -fr $working_dir
+	[ $lock_is_ours = yes ] && lock_remove
+}
+
+index_append() {
+	lock_wait
+	echo "Appending index..." >&3
+	gzip -c9 \
+	>> "$index_file"
+	echo "Append complete" >&3
+}
+index_read () {
+	lock_wait
+	echo "Reading index..." >&3
+	if [ -s "$index_file" ];
+	then
+		cat "$index_file" \
+		| tail +2 \
+		| gzip -dc
+	else
+		echo
+	fi
+	echo "Read complete" >&3
+
+}
+index_write () {
+	echo "Writing index..." >&3
+	lock_create
+	new_file=`mktemp -p$working_dir`
+	echo $version > $new_file
+	gzip -c9 \
+	>> "$new_file"
+	mv $new_file "$index_file"
+	lock_remove
+	echo "Write complete" >&3
+}
+
+key_decode () {
+	base64 -d
+}
+key_encode () {
+	base64 -w0
+}
+
+lock_check () {
+	echo "Checking for lock `lock_file`..." >&3
+	if [ -L "`lock_file`" ];
+	then
+		echo "Lock `lock_file` exists..." >&3
+		if [ -e .$index_file.lock ];
+		then
+			echo "Lock `lock_file` is valid" >&3
+			return 1
+		else
+			echo "Lock `lock_file` is invalid" >&3
+			lock_remove
+		fi
+	fi
+	echo "Index not locked" >&3
+	return 0
+}
+lock_is_ours=no
+lock_create () {
+	lock_wait
+	echo "Locking index with `lock_file`" >&3
+	ln -fs `mktemp -p$working_dir` "`lock_file`"
+	lock_is_ours=yes
+}
+lock_file () {
+	echo "`dirname "$index_file"`/.`basename "$index_file"`.lock"
+}
+lock_remove () {
+	echo "Removing lock `lock_file`" >&3
+	rm -f "`lock_file`"
+	lock_is_ours=no
+}
+lock_wait () {
+	echo "Waiting for lock" >&3
+	sleep $wait_max &
+	proc=$!
+	while ! lock_check;
+	do 
+		echo "Index locked by `lock_file`" >&3
+		sleep $wait_interval
+		ps -p$proc \
+		|| error "Timed out waiting for lock `lock_file`" 3
+	done 
+	kill $proc || :
+}
+
+run_operation () {
+	commnd=$1
+	printf '\nCommand %s...\n' $commnd >&3
+	operation_read=yes
+	[ $commnd = usage ] || check_index_supplied 
+	$commnd
+	echo Command $commnd done >&3
+}
+
+token_hash () {
+	md5sum \
+	| cut -d' ' -f1
+}
+
+tokens_read () {
+	echo Reading tokens... >&3
+	count=0
+	while read -r line;
+	do
+		echo "$line" \
+		| token_hash
+		count=$((count+1))
+	done <$list_file
+	: > $list_file
+	if [ $has_token_files = yes ];
+	then
+		for file in $token_files/*;
+		do
+			cat $file \
+			| token_hash
+			rm $file
+			count=$((count+1))
+		done
+		has_token_files=no
+	fi
+	echo Read $count tokens >&3
+}
+
+create () {
+	check_index_supplied
+	[ -e "$index_file" ] \
+	&& error "Cannot create $index_file, file exists." 2
+	echo Creating $index_file >&3
+	echo $version > $index_file
+}
+
+index () {
+	check_index_writable
+	check_key_supplied
+	tokens_read \
+	| sort \
+	| uniq -c \
+	| awk '{ print $2, $1, "'"$key"'"}' \
+	| index_append
+}
+
+list () {
+	check_index_readable
+	for key in $(
+		index_read \
+		| cut -d' ' -f3 \
+		| sort \
+		| uniq ); 
+	do
+		echo $key \
+		| key_decode
+		echo
+	done
+}
+
+remake () {
+	check_index_readable
+	check_index_writable
+	current_count=0
+	finish=`mktemp -p$working_dir`	
+	echo "finish finish finish" >$finish
+	index_read \
+	| cat - $finish \
+	| sort -k3,1 \
+	| while read -r token number key;
+	do
+		# If the token and key match the previous line, sum the counts.
+		if [ "$previous_token" = $token ] && [ "$previous_key" = $key ];
+		then
+			current_count=$((current_count+number))
+		else
+			# If we have a new token/key combo, and the previous combo had
+			# counts, output the previous combo and reset the values.
+			if [ $current_count -gt 0 ];
+			then
+				printf '%s %s %s\n' \
+				"$previous_token" \
+				"$current_count" \
+				"$previous_key"
+			fi
+			# Reset the values
+			previous_token=$token
+			previous_key=$key
+			current_count=$number
+		fi
+	done \
+	| index_write
+}
+
+remove () {
+	check_index_writable
+	check_key_supplied
+	index_read \
+	| grep -v " $key$" \
+	| index_write
+}
+
+search () {
+	check_index_readable
+	grep_str=zgrep
+	for token in `tokens_read`;
+	do 
+		grep_str="$grep_str -e '^$token '"
+	done
+	lock_wait
+	cat "$index_file" \
+	| tail +2 \
+	| eval $grep_str \
+	| awk '{ score[$3] = score[$3] ? score[$3] * (1+$2) : 1+$2 } END { for (key in score) print score[key], key }' \
+	| sort -rn \
+	| head -$result_count \
+	| cut -d' ' -f2 \
+	| while read -r encoded_key;
+	do
+		echo $encoded_key \
+		| base64 -d
+		echo
+	done
+}
+
+working_dir=`mktemp -d`
+trap finish EXIT 
+list_file=`mktemp -p$working_dir`
+token_files=`mktemp -dp$working_dir`
+
+key=
+index_file=
+
+operation_read=no
+has_token_files=no
+
+result_count_default=1
+result_count=$result_count_default
+wait_interval_default=0.1
+wait_interval=$wait_interval_default
+wait_max_default=2
+wait_max=$wait_max_default
+verbose_mode_initial=off
+verbose_mode=$verbose_mode_initial
+
+exec 3> /dev/null
+
+while getopts :cC:f:hik:K:lmrsS:t:T:v opt
+do
+	case $opt in
+		c)
+			run_operation create
+			;;
+		C)
+			echo "$OPTARG" \
+			| grep -qE '^[[:digit:]]+$' \
+			|| error "Argument to $opt must be a positive integer" 1
+			result_count=$OPTARG
+			;;
+		f)
+			index_file=$OPTARG
+			;;
+		h)
+			run_operation usage
+			;;
+		i)
+			run_operation index
+			;;
+		k)
+			key=`printf '%s' "$OPTARG" | key_encode`
+			;;
+		K)
+			if [ "$OPTARG" -eq '-' ];
+			then
+				key=`key_encode`
+			else
+				[ -r "$OPTARG" ] \
+				|| error "$OPTARG not readable" 2
+				key=`cat "$OPTARG" | key_encode`
+			fi
+			;;
+		l)
+			run_operation list
+			;;
+		m)
+			run_operation remake
+			;;
+		r)
+			run_operation remove
+			;;
+		s)
+			run_operation search
+			;;
+		t)
+			if [ "$OPTARG" = '-' ];
+			then
+				cat >> $list_file
+			else
+				[ -r "$OPTARG" ] \
+				|| error "$file not readable" 2
+				cat "$OPTARG" >> $list_file
+			fi
+			;;
+		T)
+			if [ "$OPTARG" -eq '-' ];
+			then
+				cat > `mktemp -p $token_files`
+			else
+				[ -r "$OPTARG" ] \
+				|| error "$OPTARG not readable" 2
+				cp "$OPTARG" `mktemp -p $token_files`
+			fi
+			has_token_files=yes
+			;;
+		v)
+			if [ $verbose_mode = on ];
+			then
+				exec 3>/dev/null
+				verbose_mode=off
+			else
+				exec 3>&2
+				verbose_mode=on
+			fi
+			;;
+		w)
+			echo "$OPTARG" \
+			| grep -qE '^[[:digit:]]+(\.[[:digit:]]+)?$' \
+			|| error "Argument to $opt must be a positive number" 1
+			wait_interval=$OPTARG
+			;;
+		W)
+			echo "$OPTARG" \
+			| grep -qE '^[[:digit:]]+(\.[[:digit:]]+)?$' \
+			|| error "Argument to $opt must be a positive number" 1
+			wait_max=$OPTARG
+			;;
+		?)
+			echo Invalid option -$OPTARG >&2
+			usage
+			exit 1
+			;;
+	esac
+done
+shift $((OPTIND-1))
+remaining=$@
+[ -z "$remaining" ] || error "Found bad arguments at '$remaining'" 1
+[ $operation_read = yes ] || error "No operation given" 1
