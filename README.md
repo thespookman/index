@@ -71,6 +71,10 @@ by - to read from stdin.
 
 ## MODIFIERS
 
+**-C**\<num\>
+
+:   set the number of results to be returned by the Search operation.
+
 **-f**\<file\>
 
 :   set the index file to be operated on by subsequent operations.
